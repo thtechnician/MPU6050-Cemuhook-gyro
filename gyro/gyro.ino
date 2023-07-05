@@ -5,6 +5,9 @@
 #include "I2Cdev.h"  // https://github.com/jrowberg/i2cdevlib
 #include "CRC32.h"   // by bakercp, https://github.com/bakercp/CRC32
 
+#include <FastLED.h>  // https://github.com/FastLED/FastLED
+CRGB leds[1];
+
 WiFiUDP udp;
 uint8_t  udpIn[28];
 uint8_t  udpInfoOut[32];
@@ -17,7 +20,7 @@ uint32_t dataPacketNumber = 0; // Current data packet count
 // All time variables are in microseconds
 uint32_t dataSendTime; // Current time
 uint32_t dataRequestTime; // Time of the last data request
-const uint32_t dataSendDelay = 75000; // Time between sending data packages
+const uint32_t dataSendDelay = 5000; // Time between sending data packages
 const uint32_t dataRequestTimeout = 120000000; // Timeout time for data request
 
 const uint32_t infoResponseSize = 32;
@@ -26,16 +29,18 @@ bool shouldSend = false;
 bool delayDataPacket = false;
 
 /***************************************************************************************
- * User Defined Data
+ * User Defined Data - Read the comments and change values as required.
 ****************************************************************************************/
 
-char wifiSSID[] = "********";
-char wifiPass[] = "********";
+char wifiSSID[] = "";  //Enter your WiFi details between the inverted commas
+char wifiPass[] = "";
 uint16_t udpPort = 26760;
 
+const int led_pin = 12 //Replace with whatever pin your WS2812 LED is connected to.
 const uint8_t MPU6050_sda = 4, MPU6050_scl = 5; // MPU6050 I2C GPIO connection
 const uint8_t MPU_addr = 0x68; // I2C address of the MPU-6050
 
+//Replace the below 3 functions with the ones you get from calibrate.ino
 
 int16_t* swapTable[] =
 {
@@ -49,22 +54,21 @@ int16_t* swapTable[] =
 bool signTable[] = // If true change sign
 {
   false, // accXI
-  false, // accYI
-  true,  // accZI
+  true,  // accYI
+  false, // accZI
   true,  // gyrPI
-  false, // gyrYI
-  true,  // gyrRI
+  true,  // gyrYI
+  false, // gyrRI
 };
 int16_t offsetTable[] =
 {
-  -2818, // accXI
-  2461, // accYI
-  1148, // accZI
-  -47, // gyrPI
-  -72, // gyrYI
-  35, // gyrRI
+  -1984, // accXI
+  1085, // accYI
+  1294, // accZI
+  106, // gyrPI
+  -90, // gyrYI
+  18, // gyrRI
 };
-
 
 float gyrOffYF = 0; // Optional: Set this value to Gyro Y from PadTest when the gamepad is immobile to remove drift
 
@@ -253,26 +257,39 @@ uint8_t makeDataPackage(uint8_t* output,       uint32_t packetCount,  uint32_t t
 
 void setup() 
 {
-  Serial.begin(74880);
-
-  Serial.print("\nConnecting");
+  
+  FastLED.addLeds<WS2812, led_pin, GRB>(leds, 1);  //Replace 12 with the GPIO pin you are using for the LED.
+  //Connecting to wifi
   WiFi.begin(wifiSSID, wifiPass);  
   while (WiFi.status() != WL_CONNECTED)
   {
-    delay(500);
-    Serial.print(".");
+    leds[0] = CRGB(50,20,0);
+    FastLED.show();
+    delay(250);
+    
+    leds[0] = CRGB(0,0,0);
+    FastLED.show();
+    delay(250);
   }   
-  Serial.print("\nConnected, IP address: ");          
-  Serial.print(WiFi.localIP());
-
-  udp.begin(udpPort);
-  Serial.print("\nUDP server has been set up at port: ");
-  Serial.println(udpPort);  
+  //Connection complete
+  leds[0] = CRGB(0,0,50);
+  FastLED.show();
+  delay(250);
   
-  Serial.println("Initializing MPU6050");        
+  //Start UDP server
+  udp.begin(udpPort);
+  
+  //Initializing the MPU 6050       
   Wire.begin(MPU6050_sda, MPU6050_scl); // Connect MPU6050 to GPIO pins defined in MPU6050_sda and MPU6050_scl
   accgyr.initialize();    
-  Serial.println(accgyr.testConnection() ? "MPU6050 connection successful" : "MPU6050 connection failed");
+  while(accgyr.testConnection()!=1){   //Show if MPU6050 is connected
+    leds[0] = CRGB(50,0,0);
+    FastLED.show();
+    delay(250);
+    leds[0] = CRGB(0,0,0);
+    FastLED.show();
+    delay(250);
+  }
   accgyr.setFullScaleGyroRange(gyroSens); // Set selected gyro sensetivity
   accgyr.setXAccelOffset(offsetTable[0]);
   accgyr.setYAccelOffset(offsetTable[1]);
@@ -283,7 +300,9 @@ void setup()
 
   dataRequestTime = micros(); // Set dataRequestTime, so that if we won't get a data request in time we will shutdown
 
-  Serial.println("Setup done!");     
+  //Setup Complete
+  leds[0] = CRGB(0,10,0);
+  FastLED.show();     
 }
 void loop() 
 {
@@ -294,7 +313,7 @@ void loop()
     switch(udpIn[16]) // udpIn[16] - Least significant byte of event type
     {
       case 0x01: // Information about controllers
-        Serial.println("Got info request!");        
+            
 
         for (uint8_t i = 0; i < udpIn[20]; i++) // udpIn[20] - Amount of ports we should report about
         {
@@ -307,20 +326,14 @@ void loop()
         shouldSend = false;
       break;
       case 0x02: // Controller input data
-        Serial.println("Got data request!");      
+        
         
         dataRequestTime = micros(); // Refresh timeout timer        
         shouldSend = true;
       break;      
     }
   } 
-  if (micros() - dataRequestTime > dataRequestTimeout) // Check if timedout by a lack of controller data requests
-  {    
-    // If we haven't recieved any datapacket in time, 
-    // than orientation information is not needed, so we will shutdown to save energy for the gamepad
-    Serial.println("Shutting down..."); Serial.flush();
-    ESP.deepSleep(0); 
-  }
+  
   if (delayDataPacket && shouldSend)
   {
     udp.beginPacket(udp.remoteIP(), udp.remotePort());
@@ -361,15 +374,6 @@ void loop()
     
     gyrYF -= gyrOffYF;
 
-    if (serialPlotting) 
-    {
-        Serial.print(" AX: "); Serial.print(accXF);
-        Serial.print(" AY: "); Serial.print(accYF);
-        Serial.print(" AZ: "); Serial.print(accZF);
-        Serial.print(" GP: "); Serial.print(gyrPF);
-        Serial.print(" GY: "); Serial.print(gyrYF);
-        Serial.print(" GR: "); Serial.println(gyrRF);  
-    }
     
     makeDataPackage(&udpDataOut[0], dataPacketNumber, dataSendTime, accXF, accYF, accZF, gyrPF, gyrYF, gyrRF);
 
