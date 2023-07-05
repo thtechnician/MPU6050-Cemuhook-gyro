@@ -7,6 +7,7 @@ Gyroscope for Cemuhook, based on ESP8266 microcontroller and MPU6050 acceleromet
 Instructions for use :
 From https://github.com/jrowberg/i2cdevlib - download and install I2Cdev and MPU6050 libraries.
 Download and install this library - https://github.com/bakercp/CRC32
+Also this for the LEDs - https://github.com/FastLED/FastLED
 
 Run calibrate.ino first. Follow instructions on screen. Then copy the result it gives you and replace the corresponding code in gyro.ino. Enter your WiFi SSID and Password in the given section. You will need to check your WiFi router to find the IP address of the ESP. You can use the IP for motion input in any program.
 
